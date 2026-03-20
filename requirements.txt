@@ -1,0 +1,40 @@
+# ─── Web scraping ───────────────────────────────────────────
+playwright>=1.44.0
+beautifulsoup4>=4.12.3
+lxml>=5.2.2
+httpx>=0.27.0
+requests>=2.32.3
+fake-useragent>=1.5.1
+tenacity>=8.3.0          # retry logic with backoff
+
+# ─── NLP ────────────────────────────────────────────────────
+spacy>=3.7.4
+# run: python -m spacy download en_core_web_sm
+scikit-learn>=1.5.0      # for TF-IDF embeddings (lightweight)
+
+# ─── Optional: Heavy ML (not required, TF-IDF works fine) ──
+# transformers>=4.41.2   # only if you need advanced NLP
+# torch>=2.3.0            # heavy dependency, skip if using TF-IDF
+# sentence-transformers>=3.0.1  # for advanced embeddings (optional)
+
+# ─── Data handling ──────────────────────────────────────────
+pandas>=2.2.2
+pydantic>=2.7.1
+python-dateutil>=2.9.0
+rapidfuzz>=3.9.3          # fuzzy deduplication
+
+# ─── Storage ────────────────────────────────────────────────
+psycopg2-binary>=2.9.9  # PostgreSQL
+redis>=5.0.4
+elasticsearch>=8.13.2
+sqlalchemy>=2.0.30
+alembic>=1.13.1
+
+# ─── Scheduling ─────────────────────────────────────────────
+apscheduler>=3.10.4
+
+# ─── Config & utils ─────────────────────────────────────────
+python-dotenv>=1.0.1
+loguru>=0.7.2
+tqdm>=4.66.4
+rich>=13.7.1            # beautiful CLI output
