@@ -12,6 +12,8 @@ from scrapers.base import BaseScraper
 from scrapers.remotive_scraper import RemotiveScraper
 from scrapers.remoteok_scraper import RemoteOKScraper
 from scrapers.arbeitnow_scraper import ArbeitnowScraper
+from scrapers.adzuna_scraper import AdzunaScraper
+from scrapers.rapidapi_scraper import RapidAPIScraper
 from scrapers.internshala_scraper import IntershalaScraper
 from scrapers.naukri_scraper import NaukriScraper
 from scrapers.linkedin_scraper import LinkedInScraper
@@ -25,6 +27,8 @@ PORTAL_SCRAPERS: list[Type[BaseScraper]] = [
     RemotiveScraper,      # API — always reliable, run first
     RemoteOKScraper,      # API — always reliable
     ArbeitnowScraper,     # API — always reliable
+    AdzunaScraper,        # API — requires ADZUNA_APP_ID and ADZUNA_APP_KEY
+    RapidAPIScraper,      # API — requires RAPIDAPI_KEY
     IntershalaScraper,    # Playwright — India internships
     FreshersNowScraper,   # HTTP — India freshers
     NaukriScraper,        # Playwright — India jobs
@@ -50,7 +54,7 @@ class ScraperOrchestrator:
         self.portals = portals             # None = all portals
 
     async def run(self) -> list[RawJob]:
-        api_scrapers = [RemotiveScraper, RemoteOKScraper, ArbeitnowScraper]
+        api_scrapers = [RemotiveScraper, RemoteOKScraper, ArbeitnowScraper, AdzunaScraper, RapidAPIScraper]
         browser_scrapers = [IntershalaScraper, FreshersNowScraper, NaukriScraper, LinkedInScraper]
 
         if self.portals:

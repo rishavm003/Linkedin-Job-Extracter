@@ -1,0 +1,52 @@
+services:
+  - type: web
+    name: jobextractor-backend
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: .
+    plan: free
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: jobextractor-db
+          property: connectionString
+      - key: REDIS_URL
+        value: redis://localhost:6379/0
+      - key: ELASTICSEARCH_URL
+        value: http://localhost:9200
+      - key: ADZUNA_APP_ID
+        sync: false
+      - key: ADZUNA_APP_KEY
+        sync: false
+      - key: APYHUB_API_KEY
+        sync: false
+      - key: RAPIDAPI_KEY
+        sync: false
+      - key: FINDWORK_API_KEY
+        sync: false
+      - key: JOOBLE_API_KEY
+        sync: false
+      - key: THE_MUSE_API_KEY
+        sync: false
+      - key: REED_API_KEY
+        sync: false
+      - key: FRONTEND_URL
+        value: https://your-project.vercel.app
+    healthCheckPath: /api/health/ready
+
+  - type: worker
+    name: jobextractor-pipeline
+    runtime: docker
+    dockerfilePath: ./jobextractor/Dockerfile
+    dockerContext: .
+    plan: free
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: jobextractor-db
+          property: connectionString
+
+databases:
+  - name: jobextractor-db
+    databaseName: jobextractor
+    plan: free

@@ -1,16 +1,90 @@
+# Environment variables (NEVER commit these!)
 .env
+*.env
+!.env.example
+
+# Python
 __pycache__/
 *.pyc
 *.pyo
-.pytest_cache/
-venv/
+*.pyd
 .venv/
+venv/
 *.egg-info/
 dist/
 build/
-data/raw/
-data/processed/
-logs/
-.DS_Store
+.pytest_cache/
+.mypy_cache/
+
+# Data files (can be very large)
+jobextractor/data/raw/
+jobextractor/data/processed/
+jobextractor/logs/
+
+# Node / Next.js
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+
+# Docker
 *.log
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Elasticsearch data
+esdata/
+*.log
+logs/
+
+# Database
+*.db
+*.sqlite3
+
+# Node.js
 node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Testing
+.coverage
+htmlcov/
+.pytest_cache/
+.tox/
+
+# Build artifacts
+*.spec
+
+# Next.js
+.next/
+out/
+
+# API Keys and secrets
+secrets/
+*.key
+*.pem
+*.p12
+
+# Data files
+data/
+*.csv
+*.json
+*.xml
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# OS
+Thumbs.db
+.DS_Store

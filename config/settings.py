@@ -42,6 +42,13 @@ SCRAPE_INTERVAL_HOURS = 6     # how often to re-scrape
 SPACY_MODEL = "en_core_web_sm"
 SIMILARITY_THRESHOLD = 0.85   # for deduplication
 
+# ── External API Keys (from .env) ─────────────────────────────────────────────
+ADZUNA_APP_ID = os.getenv("ADZUNA_APP_ID", "")
+ADZUNA_APP_KEY = os.getenv("ADZUNA_APP_KEY", "")
+APYHUB_API_KEY = os.getenv("APYHUB_API_KEY", "")
+RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY", "")
+ARBEITNOW_API_URL = os.getenv("ARBEITNOW_API_URL", "https://www.arbeitnow.com/api/job-board-api")
+
 # ── Portal targets (freshers / entry-level focused) ───────────────────────────
 PORTALS = {
     "remotive": {
