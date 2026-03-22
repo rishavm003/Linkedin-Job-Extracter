@@ -17,7 +17,6 @@ import sqlalchemy as sa
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.sql import func
-from sqlalchemy.dialects.postgresql import plainto_tsquery
 
 from config.settings import DATABASE_URL
 from utils.models import ProcessedJob
@@ -131,8 +130,8 @@ class PostgresStorage:
         if not jobs:
             return 0, 0
 
-        inserted = 0
-        skipped = 0
+        inserted: int = 0
+        skipped: int = 0
 
         with self.get_session() as session:
             for job in jobs:
@@ -184,18 +183,49 @@ class PostgresStorage:
             results = q.offset(offset).limit(limit).all()
             return [r.to_dict() for r in results]
 
+    def get_job_by_id(self, job_id: str) -> Optional[dict]:
+        """Get a single job by its UUID."""
+        with self.get_session() as session:
+            job = session.query(JobRecord).filter(JobRecord.id == job_id).first()
+            return job.to_dict() if job else None
+
+    def get_portal_stats(self) -> list[dict]:
+        """Get all portals with job counts and display names in one query."""
+        with self.get_session() as session:
+            # Subquery to get one representative job per portal for display_name
+            # This is more efficient than N separate queries
+            sql = """
+                WITH portal_counts AS (
+                    SELECT source_portal, COUNT(*) as cnt
+                    FROM jobs WHERE is_active = true
+                    GROUP BY source_portal
+                ),
+                portal_names AS (
+                    SELECT DISTINCT ON (source_portal) source_portal, portal_display_name
+                    FROM jobs
+                    ORDER BY source_portal, scraped_at DESC
+                )
+                SELECT c.source_portal as portal, 
+                       COALESCE(n.portal_display_name, c.source_portal) as display_name, 
+                       c.cnt as count
+                FROM portal_counts c
+                JOIN portal_names n ON c.source_portal = n.source_portal
+                ORDER BY c.cnt DESC
+            """
+            result = session.execute(text(sql)).fetchall()
+            return [dict(row._mapping) for row in result]
+
     def get_stats(self) -> dict:
         """Aggregate stats for the dashboard."""
         with self.get_session() as session:
-            total = session.query(JobRecord).filter(JobRecord.is_active == True).count()
-            fresher = session.query(JobRecord).filter(
-                JobRecord.is_fresher_friendly == True,
-                JobRecord.is_active == True
-            ).count()
-            remote = session.query(JobRecord).filter(
-                JobRecord.is_remote == True,
-                JobRecord.is_active == True
-            ).count()
+            # Combined query for basic counts to reduce round trips
+            counts = session.execute(text("""
+                SELECT 
+                    COUNT(*) as total,
+                    SUM(CASE WHEN is_fresher_friendly = true THEN 1 ELSE 0 END) as fresher,
+                    SUM(CASE WHEN is_remote = true THEN 1 ELSE 0 END) as remote
+                FROM jobs WHERE is_active = true
+            """)).fetchone()
 
             # Domain distribution
             domain_counts = session.execute(text("""
@@ -205,7 +235,6 @@ class PostgresStorage:
             """)).fetchall()
 
             # Top skills
-            # This requires unnesting the JSON array — works in PostgreSQL
             top_skills = session.execute(text("""
                 SELECT skill, COUNT(*) as cnt
                 FROM jobs, jsonb_array_elements_text(skills::jsonb) AS skill
@@ -213,23 +242,14 @@ class PostgresStorage:
                 GROUP BY skill ORDER BY cnt DESC LIMIT 20
             """)).fetchall()
 
-            # Portal distribution
-            portal_counts = session.execute(text("""
-                SELECT source_portal, COUNT(*) as cnt
-                FROM jobs WHERE is_active = true
-                GROUP BY source_portal ORDER BY cnt DESC
-            """)).fetchall()
-
             return {
-                "total_jobs": total,
-                "fresher_friendly": fresher,
-                "remote_jobs": remote,
+                "total_jobs": counts.total or 0,
+                "fresher_friendly": int(counts.fresher or 0),
+                "remote_jobs": int(counts.remote or 0),
                 "domain_distribution": [
                     {"domain": r[0], "count": r[1]} for r in domain_counts
                 ],
-                "portal_distribution": [
-                    {"portal": r[0], "display_name": r[0], "count": r[1]} for r in portal_counts
-                ],
+                "portal_distribution": self.get_portal_stats(),
                 "top_skills": [
                     {"skill": r[0], "count": r[1]} for r in top_skills
                 ],
@@ -266,7 +286,7 @@ class PostgresStorage:
             if has_vector and query and query.strip():
                 # Full-text search using TSVector
                 tsquery = sa.func.plainto_tsquery('english', query)
-                q = q.filter(JobRecord.search_vector.op('@@')(tsquery))
+                q = q.filter(sa.column('search_vector').op('@@')(tsquery))
                 
                 # We need to add rank_score to the query output
                 # Let's use session.query(JobRecord, rank)
@@ -387,143 +407,6 @@ class PostgresStorage:
             "is_active": True,
         }
 
-    def search(
-        self,
-        query: str,
-        domain: Optional[str] = None,
-        seniority: Optional[str] = None,
-        is_remote: Optional[bool] = None,
-        is_fresher: Optional[bool] = None,
-        portal: Optional[str] = None,
-        limit: int = 20,
-        offset: int = 0,
-    ) -> list[dict]:
-        """Full-text search using PostgreSQL tsvector with optional filters."""
-        with self.get_session() as session:
-            # Check if search_vector column exists
-            has_fulltext = session.execute(text("""
-                SELECT 1 FROM information_schema.columns 
-                WHERE table_name = 'jobs' AND column_name = 'search_vector'
-            """)).fetchone() is not None
-            
-            if has_fulltext and query:
-                # Use tsvector full-text search
-                query_vector = plainto_tsquery('english', query)
-                sql = """
-                    SELECT *, ts_rank_cd(search_vector, plainto_tsquery('english', :query)) as rank_score
-                    FROM jobs
-                    WHERE search_vector @@ plainto_tsquery('english', :query)
-                    AND is_active = true
-                """
-            else:
-                # Fallback to ILIKE search or no query
-                if query:
-                    sql = """
-                        SELECT *, 0.0 as rank_score
-                        FROM jobs
-                        WHERE (title ILIKE :query OR company ILIKE :query)
-                        AND is_active = true
-                    """
-                else:
-                    # No query - get all jobs
-                    sql = """
-                        SELECT *, 0.0 as rank_score
-                        FROM jobs
-                        WHERE is_active = true
-                    """
-            
-            params = {"query": query, "limit": limit, "offset": offset}
-            
-            # Add optional filters
-            if domain:
-                sql += " AND domain = :domain"
-                params["domain"] = domain
-            if seniority:
-                sql += " AND seniority = :seniority"
-                params["seniority"] = seniority
-            if is_remote is not None:
-                sql += " AND is_remote = :is_remote"
-                params["is_remote"] = is_remote
-            if is_fresher is not None:
-                sql += " AND is_fresher_friendly = :is_fresher"
-                params["is_fresher"] = is_fresher
-            if portal:
-                sql += " AND source_portal = :portal"
-                params["portal"] = portal
-            
-            # Order by rank (or scraped_at for fallback)
-            if has_fulltext:
-                sql += " ORDER BY rank_score DESC, scraped_at DESC"
-            else:
-                sql += " ORDER BY scraped_at DESC"
-            
-            sql += " LIMIT :limit OFFSET :offset"
-            
-            result = session.execute(text(sql), params).fetchall()
-            
-            # Convert to dicts with rank_score
-            jobs = []
-            for row in result:
-                job_dict = dict(row._mapping)
-                # Ensure rank_score is a float
-                job_dict["rank_score"] = float(job_dict.get("rank_score", 0.0))
-                jobs.append(job_dict)
-            
-            return jobs
-
-    def count_search(
-        self,
-        query: str,
-        domain: Optional[str] = None,
-        seniority: Optional[str] = None,
-        is_remote: Optional[bool] = None,
-        is_fresher: Optional[bool] = None,
-        portal: Optional[str] = None,
-    ) -> int:
-        """Count total results for a search query."""
-        with self.get_session() as session:
-            # Check if search_vector column exists
-            has_fulltext = session.execute(text("""
-                SELECT 1 FROM information_schema.columns 
-                WHERE table_name = 'jobs' AND column_name = 'search_vector'
-            """)).fetchone() is not None
-            
-            if has_fulltext:
-                sql = """
-                    SELECT COUNT(*)
-                    FROM jobs
-                    WHERE search_vector @@ plainto_tsquery('english', :query)
-                    AND is_active = true
-                """
-            else:
-                sql = """
-                    SELECT COUNT(*)
-                    FROM jobs
-                    WHERE (title ILIKE :query OR company ILIKE :query)
-                    AND is_active = true
-                """
-            
-            params = {"query": f"%{query}%" if not has_fulltext else query}
-            
-            # Add optional filters
-            if domain:
-                sql += " AND domain = :domain"
-                params["domain"] = domain
-            if seniority:
-                sql += " AND seniority = :seniority"
-                params["seniority"] = seniority
-            if is_remote is not None:
-                sql += " AND is_remote = :is_remote"
-                params["is_remote"] = is_remote
-            if is_fresher is not None:
-                sql += " AND is_fresher_friendly = :is_fresher"
-                params["is_fresher"] = is_fresher
-            if portal:
-                sql += " AND source_portal = :portal"
-                params["portal"] = portal
-            
-            result = session.execute(text(sql), params).scalar()
-            return result or 0
 
     def get_job_count(self) -> int:
         """Get total active job count."""

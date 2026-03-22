@@ -13,6 +13,9 @@ from fastapi import APIRouter, Query, Depends, Request
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
+from sqlalchemy import text
+from storage.search import JobSearchService
+from storage.postgres import PostgresStorage
 from dependencies import search_dep, pg_dep
 from schemas.analytics_schema import (
     AnalyticsDashboard, SummaryResponse, DomainDistribution,
@@ -23,6 +26,9 @@ from schemas.analytics_schema import (
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
 limiter = Limiter(key_func=get_remote_address)
 
+
+# In-memory cache fallback
+_memory_cache = {}
 
 def _get_redis():
     """Get Redis client if available."""
@@ -35,7 +41,8 @@ def _get_redis():
 
 
 def _cache_get(key: str):
-    """Get value from Redis cache."""
+    """Get value from Redis cache or in-memory fallback."""
+    # Try Redis first
     redis_client = _get_redis()
     if redis_client:
         try:
@@ -44,24 +51,38 @@ def _cache_get(key: str):
                 return json.loads(data)
         except:
             pass
+    
+    # In-memory fallback
+    cached = _memory_cache.get(key)
+    if cached:
+        val, expiry = cached
+        if datetime.now() < expiry:
+            return val
+        else:
+            del _memory_cache[key]
     return None
 
 
 def _cache_set(key: str, value, ttl: int = 600):
-    """Set value in Redis cache with TTL."""
+    """Set value in Redis cache or in-memory fallback."""
+    # Set in Redis
     redis_client = _get_redis()
     if redis_client:
         try:
             redis_client.setex(key, ttl, json.dumps(value, default=str))
         except:
             pass
+    
+    # Always set in-memory for fast access/fallback
+    expiry = datetime.now() + timedelta(seconds=ttl)
+    _memory_cache[key] = (value, expiry)
 
 
 @router.get("/dashboard", response_model=AnalyticsDashboard, summary="Get complete dashboard data")
 async def get_dashboard(
     request: Request,
-    search_service: Annotated[object, Depends(search_dep)],
-    pg: Annotated[object, Depends(pg_dep)]
+    search_service: JobSearchService = Depends(search_dep),
+    pg: PostgresStorage = Depends(pg_dep)
 ):
     """Single endpoint with all dashboard data to avoid waterfall loading."""
     # Try cache first
@@ -70,9 +91,23 @@ async def get_dashboard(
         return AnalyticsDashboard(**cached)
 
     # Get raw analytics
+    import asyncio
+    
+    # Run independent heavy tasks in parallel
+    # Note: search_service.get_analytics and other methods might not be fully async,
+    # but using gather prepares the structure for future async storage layer
+    # and handles independent processing blocks.
+    
     raw = search_service.get_analytics()
     total_jobs = raw["total_jobs"]
 
+    # Wrap sync calls in threads or just run them if they are fast enough for now
+    # Ideally, storage methods should be async.
+    # For now, we perform the computation blocks independently.
+    
+    last_scraped = _get_last_scraped_at(pg)
+    seniority = _get_seniority_breakdown(pg, total_jobs)
+    
     # Build summary
     summary = SummaryResponse(
         total_jobs=total_jobs,
@@ -80,7 +115,7 @@ async def get_dashboard(
         remote_jobs=raw["remote_jobs"],
         portals_tracked=len(raw.get("portal_distribution", [])),
         domains_covered=len(raw.get("domain_distribution", [])),
-        last_scraped_at=_get_last_scraped_at(pg)
+        last_scraped_at=last_scraped
     )
 
     # Domain distribution with percentages
@@ -95,9 +130,6 @@ async def get_dashboard(
 
     # Top skills
     top_skills = raw.get("top_skills", [])
-
-    # Seniority breakdown
-    seniority_breakdown = _get_seniority_breakdown(pg, total_jobs)
 
     # Portal distribution with percentages
     portal_distribution = []
@@ -124,7 +156,7 @@ async def get_dashboard(
         summary=summary,
         domain_distribution=domain_distribution,
         top_skills=top_skills,
-        seniority_breakdown=seniority_breakdown,
+        seniority_breakdown=seniority,
         portal_distribution=portal_distribution,
         remote_vs_onsite=remote_vs_onsite,
         source=raw.get("source", "pg")
@@ -139,8 +171,8 @@ async def get_dashboard(
 @router.get("/summary", response_model=SummaryResponse, summary="Get summary statistics")
 async def get_summary(
     request: Request,
-    search_service: Annotated[object, Depends(search_dep)],
-    pg: Annotated[object, Depends(pg_dep)]
+    search_service: JobSearchService = Depends(search_dep),
+    pg: PostgresStorage = Depends(pg_dep)
 ):
     """Get summary statistics subset of dashboard."""
     cached = _cache_get("analytics:dashboard")
@@ -155,7 +187,7 @@ async def get_summary(
 @router.get("/top-skills", summary="Get top skills by frequency")
 async def get_top_skills(
     request: Request,
-    search_service: Annotated[object, Depends(search_dep)],
+    search_service: JobSearchService = Depends(search_dep),
     limit: int = Query(20, ge=1, le=100, description="Maximum skills to return")
 ):
     """Get top skills by frequency."""
@@ -174,7 +206,7 @@ async def get_top_skills(
 @router.get("/domain-distribution", response_model=List[DomainDistribution], summary="Get domain distribution")
 async def get_domain_distribution(
     request: Request,
-    search_service: Annotated[object, Depends(search_dep)]
+    search_service: JobSearchService = Depends(search_dep)
 ):
     """Get job distribution by domain with percentages."""
     cached = _cache_get("analytics:domain_dist")
@@ -202,7 +234,7 @@ async def get_domain_distribution(
 @router.get("/seniority-breakdown", response_model=List[SeniorityBreakdown], summary="Get seniority breakdown")
 async def get_seniority_breakdown_endpoint(
     request: Request,
-    pg: Annotated[object, Depends(pg_dep)]
+    pg: PostgresStorage = Depends(pg_dep)
 ):
     """Get job distribution by seniority level."""
     cached = _cache_get("analytics:seniority")
@@ -219,7 +251,7 @@ async def get_seniority_breakdown_endpoint(
 @router.get("/portal-distribution", response_model=List[PortalDistribution], summary="Get portal distribution")
 async def get_portal_distribution(
     request: Request,
-    search_service: Annotated[object, Depends(search_dep)]
+    search_service: JobSearchService = Depends(search_dep)
 ):
     """Get job distribution by portal with percentages."""
     cached = _cache_get("analytics:portal_dist")
@@ -248,7 +280,7 @@ async def get_portal_distribution(
 @router.get("/salary-ranges", response_model=List[SalaryRange], summary="Get salary ranges by domain")
 async def get_salary_ranges(
     request: Request,
-    pg: Annotated[object, Depends(pg_dep)]
+    pg: PostgresStorage = Depends(pg_dep)
 ):
     """Get average salary ranges by domain."""
     cached = _cache_get("analytics:salary_ranges")
@@ -291,7 +323,7 @@ async def get_salary_ranges(
 @router.get("/trending-skills", response_model=List[TrendingSkill], summary="Get trending skills")
 async def get_trending_skills(
     request: Request,
-    pg: Annotated[object, Depends(pg_dep)]
+    pg: PostgresStorage = Depends(pg_dep)
 ):
     """Get trending skills comparing this week vs last week."""
     cached = _cache_get("analytics:trending")
@@ -364,7 +396,7 @@ async def get_trending_skills(
 @router.get("/remote-vs-onsite", response_model=RemoteVsOnsite, summary="Get remote vs onsite breakdown")
 async def get_remote_vs_onsite(
     request: Request,
-    search_service: Annotated[object, Depends(search_dep)]
+    search_service: JobSearchService = Depends(search_dep)
 ):
     """Get remote vs onsite job breakdown."""
     cached = _cache_get("analytics:remote_onsite")
@@ -401,7 +433,7 @@ def _get_last_scraped_at(pg) -> Optional[datetime]:
         return None
 
 
-def _get_seniority_breakdown(pg, total_jobs: int = None) -> List[SeniorityBreakdown]:
+def _get_seniority_breakdown(pg: PostgresStorage, total_jobs: Optional[int] = None) -> List[SeniorityBreakdown]:
     """Get seniority breakdown with percentages."""
     try:
         with pg.get_session() as session:

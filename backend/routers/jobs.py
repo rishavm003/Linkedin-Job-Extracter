@@ -156,20 +156,7 @@ async def get_portals(
     pg: Annotated[object, Depends(pg_dep)]
 ):
     """Get all portals with job counts."""
-    stats = pg.get_stats()
-    portals = []
-    
-    for portal, count in stats.get("portal_distribution", {}).items():
-        # Get display name from first job of this portal
-        portal_jobs = pg.get_jobs(portal=portal, limit=1)
-        display_name = portal_jobs[0].get("portal_display_name", portal) if portal_jobs else portal
-        
-        portals.append(PortalInfo(
-            portal=portal,
-            display_name=display_name,
-            count=count
-        ))
-    
+    portals = pg.get_portal_stats()
     return portals
 
 
@@ -181,8 +168,8 @@ async def get_domains(
     stats = pg.get_stats()
     
     return [
-        DomainInfo(domain=domain, count=count)
-        for domain, count in stats.get("domain_distribution", {}).items()
+        DomainInfo(domain=item["domain"], count=item["count"])
+        for item in stats.get("domain_distribution", [])
     ]
 
 
@@ -208,17 +195,7 @@ async def get_job_detail(
     pg: Annotated[object, Depends(pg_dep)]
 ):
     """Get detailed information for a specific job."""
-    # Add get_job_by_id method if it doesn't exist
-    job = None
-    try:
-        # Try to get by id (this might need to be added to PostgresStorage)
-        jobs = pg.get_jobs(limit=1000)  # Get all jobs and filter
-        for j in jobs:
-            if j.get("id") == job_id:
-                job = j
-                break
-    except Exception:
-        pass
+    job = pg.get_job_by_id(job_id)
     
     if not job:
         raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
