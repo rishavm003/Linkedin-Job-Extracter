@@ -89,16 +89,7 @@ bash scripts/deploy.sh
 | **The Muse** | https://www.themuse.com/developers | 1,000 requests/month |
 | **Reed** | https://www.reed.co.uk/developers | 1,000 requests/month |
 
-## 💻 Development (Hot Reload)
 
-```bash
-# Start with hot reload
-docker compose -f docker-compose.dev.yml up
-
-# Or manual setup
-cd backend && uvicorn main:app --reload
-cd frontend && npm run dev
-```
 
 ## 🤖 With AI Assistant
 
