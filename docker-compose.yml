@@ -62,7 +62,7 @@ services:
   pipeline:
     build:
       context: .
-      dockerfile: jobextractor/Dockerfile
+      dockerfile: apps/worker/Dockerfile
     restart: unless-stopped
     depends_on:
       postgres:
@@ -78,10 +78,10 @@ services:
       REDIS_URL: redis://redis:6379/0
       ELASTICSEARCH_URL: http://elasticsearch:9200
     volumes:
-      - ./jobextractor/data:/app/jobextractor/data
-      - ./jobextractor/logs:/app/jobextractor/logs
+      - ./data:/app/data
+      - ./logs:/app/logs
     command: >
-      sh -c "cd /app/jobextractor &&
+      sh -c "cd /app/apps/worker &&
              python -m alembic upgrade head &&
              python main.py run --db &&
              python main.py schedule --hours 6 --db"
@@ -90,7 +90,7 @@ services:
   backend:
     build:
       context: .
-      dockerfile: backend/Dockerfile
+      dockerfile: apps/api/Dockerfile
     restart: unless-stopped
     depends_on:
       postgres:
@@ -108,17 +108,17 @@ services:
     ports:
       - "8000:8000"
     healthcheck:
-      test: ["CMD", "curl", "-f",
-             "http://localhost:8000/api/health/ready"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health/ready"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   # ── Frontend (Next.js) ────────────────────────────────────────
   frontend:
     build:
       context: .
-      dockerfile: frontend/Dockerfile
+      dockerfile: apps/web/Dockerfile
       args:
         NEXT_PUBLIC_API_URL: http://localhost:80
     restart: unless-stopped
@@ -127,7 +127,7 @@ services:
     environment:
       NEXT_PUBLIC_API_URL: http://localhost:80
     ports:
-      - "3000:3000"
+      - "3001:3000"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000"]
       interval: 30s

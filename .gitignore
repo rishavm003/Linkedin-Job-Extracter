@@ -1,90 +1,64 @@
-# Environment variables (NEVER commit these!)
+# ── Environment ──────────────────────────────────────────────────────────────
 .env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
 *.env
 !.env.example
 
-# Python
+# ── Python ───────────────────────────────────────────────────────────────────
 __pycache__/
-*.pyc
-*.pyo
+*.py[cod]
+*$py.class
 *.pyd
-.venv/
+.Python
+env/
 venv/
-*.egg-info/
-dist/
-build/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.cache
+nosetests.xml
+coverage.xml
+*.cover
 .pytest_cache/
 .mypy_cache/
 
-# Data files (can be very large)
-jobextractor/data/raw/
-jobextractor/data/processed/
-jobextractor/logs/
-
-# Node / Next.js
-frontend/node_modules/
-frontend/.next/
-frontend/out/
-
-# Docker
-*.log
-
-# OS
-.DS_Store
-Thumbs.db
-desktop.ini
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# Elasticsearch data
-esdata/
-*.log
-logs/
-
-# Database
-*.db
-*.sqlite3
-
-# Node.js
+# ── Node / Web ────────────────────────────────────────────────────────────────
 node_modules/
+**/node_modules/
+.next/
+**/ .next/
+out/
+build/
+dist/
+.eslintcache
+.stylelintcache
+*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# Testing
-.coverage
-htmlcov/
-.pytest_cache/
-.tox/
-
-# Build artifacts
-*.spec
-
-# Next.js
-.next/
-out/
-
-# API Keys and secrets
-secrets/
-*.key
-*.pem
-*.p12
-
-# Data files
+# ── Project Specific ─────────────────────────────────────────────────────────
 data/
-*.csv
-*.json
-*.xml
+logs/
+esdata/
+pgdata/
+**/data/*.json
+**/data/raw/
+**/data/processed/
 
-# Temporary files
-tmp/
-temp/
-*.tmp
-
-# OS
-Thumbs.db
+# ── IDE & OS ─────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
 .DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Docker ───────────────────────────────────────────────────────────────────
+.docker/
