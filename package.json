@@ -1,0 +1,18 @@
+{
+  "name": "linkedin-job-extractor",
+  "version": "2.0.0",
+  "private": true,
+  "scripts": {
+    "start": "concurrently -k -n \"WEB,API,SCHED\" -c \"cyan,magenta,yellow\" \"npm run dev --prefix apps/web -- -p 3001\" \"uvicorn main:app --app-dir apps/api --reload --port 8000\" \"python main.py schedule --db\"",
+    "dev": "concurrently -k -n \"WEB,API\" -c \"cyan,magenta\" \"npm run dev --prefix apps/web -- -p 3001\" \"uvicorn main:app --app-dir apps/api --reload --port 8000\"",
+    "worker": "python main.py run --db",
+    "db": "docker compose up -d postgres redis elasticsearch",
+    "build": "npm run build --prefix apps/web",
+    "docker-build": "docker compose build",
+    "stop": "docker compose down",
+    "install-deps": "pip install -r apps/worker/requirements.txt && pip install -r apps/api/requirements.txt && npm install --prefix apps/web"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
